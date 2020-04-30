@@ -45,8 +45,32 @@ Promise.all([
   transactAsync(async () => {
     alter(baz, (baz) => baz - 3);
   }).then(() => console.log("c", deref(baz))),
-]).then(() => console.log(deref(baz) === 1));
+]).then(() => console.log("baz", deref(baz) === 0));
+
+let nested = ref(0);
 
 transactSync(() => {
-  set(baz, 1);
+  alter(nested, (n) => n + 1);
+  transactSync(() => {
+    alter(nested, (n) => n - 2);
+  });
 });
+
+console.log("nested", "sync+sync", deref(nested) === -1);
+
+transactAsync(async () => {
+  alter(nested, (n) => n + 1);
+  transactSync(() => {
+    alter(nested, (n) => n - 2);
+  });
+}).then(() => console.log("nested", "async+sync", deref(nested) === -2));
+
+transactAsync(async () => {
+  alter(nested, (n) => n + 1);
+  await transactAsync(async () => {
+    alter(nested, (n) => n - 2);
+  });
+  set(nested, 10);
+})
+  // .then(() => console.log("nested", "async+async", deref(nested) === 10))
+  .catch(() => console.log("nested", "async+async", deref(nested) === -2));
