@@ -6,8 +6,6 @@ function gensym() {
 
 interface IRef<T> {
   current: T;
-  set: (v: T) => T;
-  deref: () => T;
   setCurrent: (tx: ITransaction, v: T) => void;
   history: { txID: number; value: T }[];
 }
@@ -114,17 +112,18 @@ async function txRunAsync(
   tx: ITransaction,
   f: () => Promise<void>
 ): Promise<void> {
+  // schedule later
   await Promise.resolve();
-  // console.log("starting", tx.id);
+  // console.log(tx.id, "starting");
   setCurrentTx(tx);
   let error;
   try {
     let p = f();
     // clear synchronously
     clearCurrentTx();
-    // console.log("clearing");
+    // console.log(tx.id, "clearing");
     await p;
-    // console.log("committing");
+    // console.log(tx.id, "committing");
     txCommit(tx);
   } catch (e) {
     error = e;
@@ -134,7 +133,7 @@ async function txRunAsync(
 
   if (error === abortSignal) {
     // try again
-    // console.log("retrying", tx.id);
+    // console.log(tx.id, "retrying");
     return txRunAsync(createTx(true), f);
   } else if (error) {
     throw error;
@@ -146,7 +145,7 @@ class Ref<T> implements IRef<T> {
   history: { txID: number; value: T }[];
   constructor(v: T) {
     this.id = gensym();
-    this.history = [{ txID: -1, value: v }];
+    this.history = [{ txID: -1, value: v }, ...new Array(4)];
   }
 
   get current(): T {
@@ -155,23 +154,8 @@ class Ref<T> implements IRef<T> {
 
   setCurrent(tx: ITransaction, v: T) {
     // console.log("set", tx.id, v);
-    this.history = [{ txID: tx.id, value: v }, ...this.history];
-  }
-
-  deref(): T {
-    let tx;
-    if ((tx = getCurrentTx())) {
-      return txRead(tx, this);
-    }
-    return this.current;
-  }
-
-  set(v: T): T {
-    let tx;
-    if ((tx = getCurrentTx())) {
-      return txWrite(tx, this, v);
-    }
-    throw new Error("Cannot set ref value outside of a transaction");
+    let butLast = this.history.slice(0, this.history.length - 1);
+    this.history = [{ txID: tx.id, value: v }, ...butLast];
   }
 }
 
@@ -183,10 +167,11 @@ export function transactSync(f: () => void) {
 }
 
 export function transactAsync(f: () => Promise<void>) {
-  if (getCurrentTx() === undefined) {
+  let tx = getCurrentTx();
+  if (tx === undefined) {
     return txRunAsync(createTx(true), f);
   }
-  return f();
+  throw new Error("Cannot nest transactAsync");
 }
 
 export function ref<T>(init: T) {
@@ -194,11 +179,19 @@ export function ref<T>(init: T) {
 }
 
 export function set<T>(ref: IRef<T>, v: T) {
-  return ref.set(v);
+  let tx;
+  if ((tx = getCurrentTx())) {
+    return txWrite(tx, ref, v);
+  }
+  throw new Error("Cannot set ref value outside of a transaction");
 }
 
 export function deref<T>(ref: IRef<T>): T {
-  return ref.deref();
+  let tx;
+  if ((tx = getCurrentTx())) {
+    return txRead(tx, ref);
+  }
+  return ref.current;
 }
 
 export function alter<T>(
@@ -206,9 +199,17 @@ export function alter<T>(
   f: (v: T, ...args: any[]) => T,
   ...args: any[]
 ): T {
-  let old = ref.deref();
-  return ref.set(f(old, ...args));
+  let old = deref(ref);
+  return set(ref, f(old, ...args));
 }
+
+export function commute<T>(
+  ref: IRef<T>,
+  f: (v: T, ...args: any[]) => T,
+  ...args: any[]
+) {}
+
+export function ensure<T>(ref: IRef<T>) {}
 
 export function io<T>(p: Promise<T>): Promise<T> {
   let tx: ITransaction | undefined;
