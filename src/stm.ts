@@ -24,7 +24,7 @@ interface ITransaction {
 
 let currentTx: { current: ITransaction | undefined } = { current: undefined };
 
-let abortSignal = {};
+let retrySignal = {};
 
 function createTx(isAsync = false): ITransaction {
   return {
@@ -55,7 +55,7 @@ function txRead<T>(tx: ITransaction, ref: IRef<T>): T {
 
     // ref has changed since last read or alteration, abort early
     if (alteration?.prevTxID !== ref.history[0].txID) {
-      throw abortSignal;
+      throw retrySignal;
     }
     return alteration?.value;
   }
@@ -69,7 +69,7 @@ function txWrite<T>(tx: ITransaction, ref: IRef<T>, v: T): T {
     tx.refAlters.has(ref) &&
     tx.refAlters.get(ref)?.prevTxID !== ref.history[0].txID
   ) {
-    throw abortSignal;
+    throw retrySignal;
   }
   tx.refAlters.set(ref, { value: v, prevTxID: ref.history[0].txID });
   tx.alteredRefs.add(ref);
@@ -83,7 +83,7 @@ function txCommit(tx: ITransaction) {
     for (let ref of tx.alteredRefs) {
       // a transaction has occured between when the ref was altered and committing
       if (ref.history[0].txID !== tx.refAlters.get(ref)?.prevTxID) {
-        throw abortSignal;
+        throw retrySignal;
       }
       ref.setCurrent(tx, tx.refAlters.get(ref)?.value);
     }
@@ -131,7 +131,7 @@ async function txRunAsync(
     clearCurrentTx();
   }
 
-  if (error === abortSignal) {
+  if (error === retrySignal) {
     // try again
     // console.log(tx.id, "retrying");
     return txRunAsync(createTx(true), f);
@@ -211,23 +211,34 @@ export function commute<T>(
 
 export function ensure<T>(ref: IRef<T>) {}
 
-export function io<T>(p: Promise<T>): Promise<T> {
+function io<T>(x: T): T {
+  if (getCurrentTx()) {
+    throw new Error("io called inside of transaction");
+  }
+  return x;
+}
+
+export async function pause<T>(p: Promise<T>): Promise<T> {
   let tx: ITransaction | undefined;
   if ((tx = getCurrentTx()) && tx.isAsync) {
-    // console.log("io", tx);
+    // console.log("pause", tx);
     return p.then((result) => {
       setCurrentTx(tx as ITransaction);
-      // console.log("io back");
+      // console.log("pause back");
       return result;
     });
   }
-  throw new Error("Cannot use io outside of async transaction");
+  throw new Error("Cannot use pause outside of async transaction");
 }
 
-export function retry() {
+export function retry(): void {
   let tx;
   if ((tx = getCurrentTx()) && tx.isAsync) {
-    throw abortSignal;
+    throw retrySignal;
   }
   throw new Error("Cannot use retry outside of async transaction");
 }
+
+export function defer(f: Function): void {}
+
+export function compensate(f: (...args: any[]) => Function): void {}
