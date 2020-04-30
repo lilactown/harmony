@@ -1,4 +1,12 @@
-import { ref, deref, set, alter, transactSync, io, transactAsync } from "./stm";
+import {
+  ref,
+  deref,
+  set,
+  alter,
+  transactSync,
+  pause,
+  transactAsync,
+} from "./stm";
 
 function sleep(ms: number) {
   return new Promise((res) => {
@@ -34,7 +42,7 @@ let baz = ref(0);
 Promise.all([
   transactAsync(async () => {
     alter(baz, (baz) => baz + 10);
-    await io(sleep(100));
+    await pause(sleep(100));
     alter(baz, (baz) => baz - 5);
   }).then(() => console.log("a", deref(baz))),
 
@@ -63,7 +71,16 @@ transactAsync(async () => {
   transactSync(() => {
     alter(nested, (n) => n - 2);
   });
-}).then(() => console.log("nested", "async+sync", deref(nested) === -2));
+}).then(() => console.log("nested", "sync+sync", deref(nested) === -2));
+
+transactAsync(async () => {
+  alter(nested, (n) => n + 1);
+  transactSync(() => {
+    alter(nested, (n) => n - 2);
+  });
+  await pause(sleep(100));
+  console.log("nested", "async+sync", "inner", deref(nested));
+}).then(() => console.log("nested", "async+sync", deref(nested) === -3));
 
 transactAsync(async () => {
   alter(nested, (n) => n + 1);
