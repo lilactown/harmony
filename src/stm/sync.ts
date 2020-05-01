@@ -3,35 +3,37 @@ import {
   createTx,
   getCurrentTx,
   setCurrentTx,
+  clearCurrentTx,
   txRead,
   txWrite,
-  txRun,
-  retrySignal,
+  txCommit,
 } from "./transaction";
 
-let currentId = 0;
+let id = 0;
 
 function gensym() {
-  return currentId++;
+  return id++;
 }
 
-class Ref<T> implements IRef<T> {
-  id: number;
-  history: { txID: number; value: T }[];
-  constructor(v: T) {
-    this.id = gensym();
-    this.history = [{ txID: -1, value: v }, ...new Array(4)];
+function txRun(tx: ITransaction, f: () => void): ITransaction {
+  setCurrentTx(tx);
+  let error;
+  let report;
+  try {
+    f(); // side-effecting
+    txCommit(tx);
+  } catch (e) {
+    error = e;
+  } finally {
+    report = getCurrentTx() as ITransaction;
+    clearCurrentTx();
   }
 
-  get current(): T {
-    return this.history[0].value;
+  if (error) {
+    // re-throw error
+    throw error;
   }
-
-  setCurrent(tx: ITransaction, v: T) {
-    // console.log("set", tx.id, v);
-    let butLast = this.history.slice(0, this.history.length - 1);
-    this.history = [{ txID: tx.id, value: v }, ...butLast];
-  }
+  return report;
 }
 
 export function transact(f: () => void) {
@@ -39,10 +41,6 @@ export function transact(f: () => void) {
     return txRun(createTx(), f);
   }
   return f();
-}
-
-export function ref<T>(init: T) {
-  return new Ref(init);
 }
 
 export function set<T>(ref: IRef<T>, v: T) {
@@ -70,40 +68,11 @@ export function alter<T>(
   return set(ref, f(old, ...args));
 }
 
-export function commute<T>(
-  ref: IRef<T>,
-  f: (v: T, ...args: any[]) => T,
-  ...args: any[]
-) {}
-
-export function ensure<T>(ref: IRef<T>) {}
-
-function io<T>(x: T): T {
+export function io<T>(x: T): T {
   if (getCurrentTx()) {
     throw new Error("io called inside of transaction");
   }
   return x;
-}
-
-export async function pause<T>(p: Promise<T>): Promise<T> {
-  let tx: ITransaction | undefined;
-  if ((tx = getCurrentTx()) && tx.isAsync) {
-    // console.log("pause", tx);
-    return p.then((result) => {
-      setCurrentTx(tx as ITransaction);
-      // console.log("pause back");
-      return result;
-    });
-  }
-  throw new Error("Cannot use pause outside of async transaction");
-}
-
-export function retry(): void {
-  let tx;
-  if ((tx = getCurrentTx()) && tx.isAsync) {
-    throw retrySignal;
-  }
-  throw new Error("Cannot use retry outside of async transaction");
 }
 
 export function defer(f: Function): void {}

@@ -8,6 +8,19 @@ function gensym() {
 
 let currentTx: { current: ITransaction | undefined } = { current: undefined };
 
+export function getCurrentTx() {
+  return currentTx.current;
+}
+
+export function setCurrentTx(tx: ITransaction) {
+  currentTx.current = tx;
+}
+
+export function clearCurrentTx() {
+  currentTx.current = undefined;
+  return currentTx.current;
+}
+
 export let retrySignal = {};
 
 export function createTx(isAsync = false): ITransaction {
@@ -17,20 +30,6 @@ export function createTx(isAsync = false): ITransaction {
     alteredRefs: new Set<IRef<any>>(),
     isAsync,
   };
-}
-
-export function getCurrentTx() {
-  return currentTx.current;
-}
-
-export function setCurrentTx(tx: ITransaction) {
-  currentTx.current = tx;
-  return tx;
-}
-
-export function clearCurrentTx() {
-  currentTx.current = undefined;
-  return currentTx;
 }
 
 export function txRead<T>(tx: ITransaction, ref: IRef<T>): T {
@@ -71,23 +70,5 @@ export function txCommit(tx: ITransaction) {
       }
       ref.setCurrent(tx, tx.refSets.get(ref)?.value);
     }
-  }
-}
-
-export function txRun(tx: ITransaction, f: () => void): void {
-  setCurrentTx(tx);
-  let error;
-  try {
-    f(); // side-effecting
-    txCommit(tx);
-  } catch (e) {
-    error = e;
-  } finally {
-    clearCurrentTx();
-  }
-
-  if (error) {
-    // re-throw error
-    throw error;
   }
 }
