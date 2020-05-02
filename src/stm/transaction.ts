@@ -3,7 +3,7 @@ import { IRef, ITransaction } from "./interfaces";
 let currentId = 0;
 
 function gensym() {
-  return currentId++;
+  return "tx_" + currentId++;
 }
 
 let currentTx: { current: ITransaction | undefined } = { current: undefined };

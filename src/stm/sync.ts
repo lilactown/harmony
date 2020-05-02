@@ -4,16 +4,10 @@ import {
   getCurrentTx,
   setCurrentTx,
   clearCurrentTx,
-  txRead,
   txWrite,
   txCommit,
 } from "./transaction";
-
-let id = 0;
-
-function gensym() {
-  return id++;
-}
+import { deref } from "./ref";
 
 function txRun(tx: ITransaction, f: () => void): ITransaction {
   setCurrentTx(tx);
@@ -49,14 +43,6 @@ export function set<T>(ref: IRef<T>, v: T) {
     return txWrite(tx, ref, v);
   }
   throw new Error("Cannot set ref value outside of a transaction");
-}
-
-export function deref<T>(ref: IRef<T>): T {
-  let tx;
-  if ((tx = getCurrentTx())) {
-    return txRead(tx, ref);
-  }
-  return ref.current;
 }
 
 export function alter<T>(
