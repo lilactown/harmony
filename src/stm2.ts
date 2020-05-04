@@ -43,7 +43,7 @@ function genTxID() {
 
 type RefMap<T> = Map<IRef<T>, T>;
 
-interface ExecutionContext {
+interface ThunkContext {
   fn: Function;
   dependentRefs: { ref: IRef<any>; version: refVersion }[];
 }
@@ -76,17 +76,17 @@ interface TransactionReport {
   alteredRefs: RefMap<any>;
 }
 
-interface ExecutionReport {}
+interface ThunkReport {}
 
 export interface ITransaction extends Iterable<Function> {
-  add(execution: () => any): ITransaction;
+  add(thunk: () => any): ITransaction;
   doIn<T>(f: () => T): T;
   retry(): ITransaction;
   commit(): TransactionReport;
   isCommitted: boolean;
   isAborted: boolean;
 
-  onExecute(f: (exec: ExecutionReport) => void): () => void;
+  onExecute(f: (report: ThunkReport) => void): () => void;
   onRetry(f: () => void): () => void;
   onCommit(f: (tx: TransactionReport) => void): () => void;
 }
@@ -99,27 +99,27 @@ let retrySignal = {};
 
 class Transaction implements ITransaction {
   private context: ITransactionContext;
-  private unrealizedExecs: Function[];
-  private realizedExecs: ExecutionContext[];
+  private unrealizedThunks: Function[];
+  private realizedThunks: ThunkContext[];
   isCommitted: boolean;
   isAborted: boolean;
   constructor() {
     this.context = new TransactionContext();
-    this.unrealizedExecs = [];
-    this.realizedExecs = [];
+    this.unrealizedThunks = [];
+    this.realizedThunks = [];
     this.isCommitted = false;
     this.isAborted = false;
   }
   *[Symbol.iterator]() {
-    while (!this.isAborted && this.unrealizedExecs.length) {
-      let [exec, ...rest] = this.unrealizedExecs;
-      this.realizedExecs.push({ fn: exec, dependentRefs: [] });
-      this.unrealizedExecs = rest;
+    while (!this.isAborted && this.unrealizedThunks.length) {
+      let [thunk, ...rest] = this.unrealizedThunks;
+      this.realizedThunks.push({ fn: thunk, dependentRefs: [] });
+      this.unrealizedThunks = rest;
       yield () => {
         let error;
         ctx.current = this.context;
         try {
-          exec();
+          thunk();
         } catch (e) {
           error = e;
         }
@@ -133,7 +133,7 @@ class Transaction implements ITransaction {
       };
     }
   }
-  add(exec: () => any) {
+  add(thunk: () => any) {
     if (this.isCommitted) {
       throw new Error("Cannot add to transaction which has been committed");
     }
@@ -143,7 +143,7 @@ class Transaction implements ITransaction {
       );
     }
 
-    this.unrealizedExecs.push(exec);
+    this.unrealizedThunks.push(thunk);
 
     return this;
   }
@@ -165,10 +165,10 @@ class Transaction implements ITransaction {
     if (this.isCommitted) {
       throw new Error("Cannot retry transaction which has been committed");
     }
-    // general strategy atm is to move all exec fns into unrealized state
+    // general strategy atm is to move all thunks into unrealized state
     // reset context and then exec them at a later time
-    this.unrealizedExecs = this.realizedExecs.map(({ fn }) => fn);
-    this.realizedExecs = [];
+    this.unrealizedThunks = this.realizedThunks.map(({ fn }) => fn);
+    this.realizedThunks = [];
     this.context = new TransactionContext();
     this.isAborted = false;
     return this;
@@ -185,9 +185,9 @@ class Transaction implements ITransaction {
       );
     }
 
-    // realize any left over execs
-    for (let exec of this) {
-      exec();
+    // realize any left over thunks
+    for (let thunk of this) {
+      thunk();
     }
 
     let alteredRefs = new Map();
@@ -200,7 +200,7 @@ class Transaction implements ITransaction {
     return { alteredRefs };
   }
 
-  onExecute(f: (e: ExecutionReport) => void) {
+  onExecute(f: (e: ThunkReport) => void) {
     return () => void 0;
   }
   onRetry(f: () => void) {
