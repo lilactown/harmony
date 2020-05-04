@@ -2,16 +2,37 @@ type txID = string;
 
 type refVersion = number;
 
-interface Ref<T> {
+interface IRef<T> {
   read(): T;
-  version(): refVersion;
+  version: refVersion;
+  incVersion(): refVersion;
   unsafeWrite(v: T): T;
+}
+
+class Ref<T> implements IRef<T> {
+  private current: T;
+  version: refVersion;
+  constructor(init: T) {
+    this.current = init;
+    this.version = 0;
+  }
+  read() {
+    return this.current;
+  }
+  unsafeWrite(v: T) {
+    this.current = v;
+    return v;
+  }
+  incVersion() {
+    return ++this.version;
+  }
 }
 
 interface ITransactionContext {
   id: txID;
-  read<T>(ref: Ref<T>): T;
-  write<T>(ref: Ref<T>, v: T): T;
+  read<T>(ref: IRef<T>): T;
+  write<T>(ref: IRef<T>, v: T): T;
+  getRefEntries(): any;
 }
 
 let nextTxID = 0;
@@ -20,11 +41,11 @@ function genTxID() {
   return "tx" + nextTxID++;
 }
 
-type RefMap<T> = Map<Ref<T>, T>;
+type RefMap<T> = Map<IRef<T>, T>;
 
 interface ExecutionContext {
   fn: Function;
-  dependentRefs: { ref: Ref<any>; version: refVersion }[];
+  dependentRefs: { ref: IRef<any>; version: refVersion }[];
 }
 
 class TransactionContext implements ITransactionContext {
@@ -34,16 +55,20 @@ class TransactionContext implements ITransactionContext {
     this.id = genTxID();
     this.currentRefValues = new Map();
   }
-  read<T>(ref: Ref<T>): T {
+  read<T>(ref: IRef<T>): T {
     if (this.currentRefValues.has(ref)) {
       return this.currentRefValues.get(ref);
     }
     // should we add read values to tx??
     return this.write(ref, ref.read());
   }
-  write<T>(ref: Ref<T>, v: T): T {
+  write<T>(ref: IRef<T>, v: T): T {
+    // TODO add check here for drift
     this.currentRefValues.set(ref, v);
     return v;
+  }
+  getRefEntries() {
+    return this.currentRefValues.entries();
   }
 }
 
@@ -53,12 +78,13 @@ interface TransactionReport {
 
 interface ExecutionReport {}
 
-export interface ITransaction {
+export interface ITransaction extends Iterable<Function> {
   add(execution: () => any): ITransaction;
-  addLazy(execution: () => any): ITransaction;
   doIn<T>(f: () => T): T;
   retry(): ITransaction;
   commit(): TransactionReport;
+  isCommitted: boolean;
+  isAborted: boolean;
 
   onExecute(f: (exec: ExecutionReport) => void): () => void;
   onRetry(f: () => void): () => void;
@@ -75,42 +101,50 @@ class Transaction implements ITransaction {
   private context: ITransactionContext;
   private unrealizedExecs: Function[];
   private realizedExecs: ExecutionContext[];
+  isCommitted: boolean;
+  isAborted: boolean;
   constructor() {
     this.context = new TransactionContext();
     this.unrealizedExecs = [];
     this.realizedExecs = [];
+    this.isCommitted = false;
+    this.isAborted = false;
+  }
+  *[Symbol.iterator]() {
+    while (!this.isAborted && this.unrealizedExecs.length) {
+      let [exec, ...rest] = this.unrealizedExecs;
+      this.realizedExecs.push({ fn: exec, dependentRefs: [] });
+      this.unrealizedExecs = rest;
+      yield () => {
+        let error;
+        ctx.current = this.context;
+        try {
+          exec();
+        } catch (e) {
+          error = e;
+        }
+        ctx.current = undefined;
+        if (error === retrySignal) {
+          this.retry();
+        } else if (error) {
+          this.isAborted = true;
+          throw error;
+        }
+      };
+    }
   }
   add(exec: () => any) {
-    let error;
-    ctx.current = this.context;
-    try {
-      // this will block until all lazyExecs are finished; perhaps we should
-      // have this be a separate `realize` method?
-      if (this.unrealizedExecs.length) {
-        // important to capture execCount outside the loop, before modifying it
-        let execCount = this.unrealizedExecs.length;
-        for (let i = 0; i < execCount; i++) {
-          let [exec, ...rest] = this.unrealizedExecs;
-          exec();
-          this.unrealizedExecs = rest;
-        }
-      }
-      exec();
-      // TODO add dependentRefs
-      this.realizedExecs.push({ fn: exec, dependentRefs: [] });
-    } catch (e) {
-      error = e;
+    if (this.isCommitted) {
+      throw new Error("Cannot add to transaction which has been committed");
     }
-    ctx.current = undefined;
-    if (error === retrySignal) {
-      return this.retry();
-    } else if (error) {
-      throw error;
+    if (this.isAborted) {
+      throw new Error(
+        "Cannot add to transaction which has been aborted. Retry it first"
+      );
     }
-    return this;
-  }
-  addLazy(exec: () => any) {
+
     this.unrealizedExecs.push(exec);
+
     return this;
   }
   doIn<T>(f: () => T): T {
@@ -128,15 +162,42 @@ class Transaction implements ITransaction {
     return v;
   }
   retry() {
+    if (this.isCommitted) {
+      throw new Error("Cannot retry transaction which has been committed");
+    }
     // general strategy atm is to move all exec fns into unrealized state
     // reset context and then exec them at a later time
     this.unrealizedExecs = this.realizedExecs.map(({ fn }) => fn);
     this.realizedExecs = [];
     this.context = new TransactionContext();
+    this.isAborted = false;
     return this;
   }
   commit() {
-    return { alteredRefs: new Map() };
+    if (this.isCommitted) {
+      throw new Error(
+        "Cannot commit transaction which has already been committed"
+      );
+    }
+    if (this.isAborted) {
+      throw new Error(
+        "Cannot commit transaction which has been aborted. Retry it first"
+      );
+    }
+
+    // realize any left over execs
+    for (let exec of this) {
+      exec();
+    }
+
+    let alteredRefs = new Map();
+    for (let refEntry of this.context.getRefEntries()) {
+      let [ref, value] = refEntry;
+      alteredRefs.set(ref, value);
+      ref.unsafeWrite(value);
+    }
+    this.isCommitted = true;
+    return { alteredRefs };
   }
 
   onExecute(f: (e: ExecutionReport) => void) {
@@ -154,14 +215,18 @@ export function transaction(): ITransaction {
   return new Transaction();
 }
 
-export function deref<T>(ref: Ref<T>): T {
+export function ref<T>(v: T): IRef<T> {
+  return new Ref(v);
+}
+
+export function deref<T>(ref: IRef<T>): T {
   if (ctx.current) {
     return ctx.current.read(ref);
   }
   return ref.read();
 }
 
-export function set<T>(ref: Ref<T>, v: T): T {
+export function set<T>(ref: IRef<T>, v: T): T {
   if (ctx.current) {
     return ctx.current.write(ref, v);
   }
@@ -169,19 +234,19 @@ export function set<T>(ref: Ref<T>, v: T): T {
 }
 
 export function alter<T>(
-  ref: Ref<T>,
+  ref: IRef<T>,
   f: (current: T, ...args: any[]) => T,
   ...args: any[]
 ): T {
   return set(ref, f(deref(ref), ...args));
 }
 
-export function ensure(ref: Ref<any>): void {
+export function ensure(ref: IRef<any>): void {
   set(ref, deref(ref));
 }
 
 export function commute<T>(
-  ref: Ref<any>,
+  ref: IRef<any>,
   f: (current: T, ...args: any[]) => T,
   ...args: any[]
 ) {}
