@@ -1,80 +1,98 @@
 import { ref, deref, set, alter, transaction } from "./stm2";
 
-let foo = ref(0);
+test("create two refs, change them, commit them", () => {
+  let foo = ref(0);
 
-let bar = ref(2);
+  let bar = ref(2);
 
-let tx0 = transaction();
+  let tx0 = transaction();
 
-tx0
-  .add(() => {
+  tx0.add(() => {
     set(foo, 2);
     alter(bar, (bar) => deref(foo) * bar);
-  })
-  .commit();
+  });
 
-console.log(
-  "committed values work",
-  deref(foo) === 2 || deref(foo),
-  deref(bar) === 4 || deref(bar)
-);
+  expect(deref(foo)).toBe(0);
+  expect(deref(bar)).toBe(2);
 
-let tx1 = transaction();
+  tx0.commit();
 
-try {
+  expect(deref(foo)).toBe(2);
+  expect(deref(bar)).toBe(4);
+});
+
+test("abort and retry", () => {
+  let foo = ref(0);
+  let tx1 = transaction();
+
   tx1.add(() => {
-    if (deref(foo) === 2) {
+    if (deref(foo) === 0) {
       throw new Error("Invalid foo!");
     }
     set(foo, -1);
   });
-} catch (e) {
-  console.log("caught error:", e.message);
-}
 
-console.log("nothing committed yet", deref(foo) === 2 || deref(foo));
+  expect(deref(foo)).toBe(0);
 
-try {
-  tx1.commit();
-} catch (e) {
-  console.log("caught commit error:", e.message);
-}
+  let error;
+  try {
+    tx1.commit();
+  } catch (e) {
+    error = e;
+  }
+  expect(error.message).toBe("Invalid foo!");
 
-console.log("Aborted commit doesn't effect", deref(foo) === 2 || deref(foo));
+  expect(deref(foo)).toBe(0);
 
-transaction()
-  .add(() => set(foo, 0))
-  .commit();
+  try {
+    tx1.commit();
+  } catch (e) {
+    error = e;
+  }
+  expect(error.message).toBe(
+    "Cannot commit transaction which has been aborted. Retry it first"
+  );
 
-tx1.retry().commit();
+  transaction()
+    .add(() => set(foo, 1))
+    .commit();
+  expect(deref(foo)).toBe(1);
 
-console.log("Retrying works", deref(foo) === -1 || deref(foo));
+  tx1.retry().commit();
 
-let tx2 = transaction()
-  .add(() => {
-    console.log(1);
-    set(foo, 10);
-  })
-  .add(() => {
-    console.log(2);
-    alter(foo, (x) => x - 13);
-  });
+  expect(deref(foo)).toBe(-1);
+});
 
-for (let exec of tx2) {
-  exec();
-}
+test("manual exec", () => {
+  let foo = ref(0);
+  let calls = 0;
+  let tx2 = transaction()
+    .add(() => {
+      calls++;
+      set(foo, 10);
+    })
+    .add(() => {
+      calls++;
+      alter(foo, (x) => x - 13);
+    });
 
-tx2.commit();
+  for (let exec of tx2) {
+    exec();
+  }
 
-console.log(deref(foo));
+  tx2.commit();
 
-// // let nested = ref(0);
+  expect(deref(foo)).toBe(-3);
+  expect(calls).toBe(2);
+});
 
-// // transact(() => {
-// //   alter(nested, (n) => n + 1);
-// //   transact(() => {
-// //     alter(nested, (n) => n - 2);
-// //   });
-// // });
+// // // let nested = ref(0);
 
-// // console.log("nested", "sync+sync", deref(nested) === -1);
+// // // transact(() => {
+// // //   alter(nested, (n) => n + 1);
+// // //   transact(() => {
+// // //     alter(nested, (n) => n - 2);
+// // //   });
+// // // });
+
+// // // console.log("nested", "sync+sync", deref(nested) === -1);
