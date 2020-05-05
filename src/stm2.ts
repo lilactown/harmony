@@ -5,7 +5,6 @@ type refVersion = number;
 interface IRef<T> {
   read(): T;
   version: refVersion;
-  incVersion(): refVersion;
   unsafeWrite(v: T): T;
 }
 
@@ -21,15 +20,14 @@ class Ref<T> implements IRef<T> {
   }
   unsafeWrite(v: T) {
     this.current = v;
+    this.version++;
     return v;
-  }
-  incVersion() {
-    return ++this.version;
   }
 }
 
 interface ITransactionContext {
   id: txID;
+  isWriteable: boolean;
   read<T>(ref: IRef<T>): T;
   write<T>(ref: IRef<T>, v: T): T;
   getRefEntries(): any;
@@ -41,7 +39,7 @@ function genTxID() {
   return "tx" + nextTxID++;
 }
 
-type RefMap<T> = Map<IRef<T>, T>;
+type RefMap<T> = Map<IRef<T>, { value: T; version: refVersion }>;
 
 interface ThunkContext {
   fn: Function;
@@ -51,20 +49,28 @@ interface ThunkContext {
 class TransactionContext implements ITransactionContext {
   id: txID;
   currentRefValues: RefMap<any>;
+  isWriteable: boolean;
   constructor() {
     this.id = genTxID();
     this.currentRefValues = new Map();
+    this.isWriteable = true;
   }
   read<T>(ref: IRef<T>): T {
     if (this.currentRefValues.has(ref)) {
-      return this.currentRefValues.get(ref);
+      return this.currentRefValues.get(ref)?.value;
     }
     // should we add read values to tx??
-    return this.write(ref, ref.read());
+    if (this.isWriteable) {
+      return this.write(ref, ref.read());
+    }
+    return ref.read();
   }
   write<T>(ref: IRef<T>, v: T): T {
+    if (!this.isWriteable) {
+      throw new Error("Cannot change ref inside of doIn");
+    }
     // TODO add check here for drift
-    this.currentRefValues.set(ref, v);
+    this.currentRefValues.set(ref, { value: v, version: ref.version });
     return v;
   }
   getRefEntries() {
@@ -149,6 +155,7 @@ class Transaction implements ITransaction {
   }
   doIn<T>(f: () => T): T {
     let v;
+    this.context.isWriteable = false;
     ctx.current = this.context;
     // TODO find some way to disable writing in doIn
     try {
@@ -159,6 +166,8 @@ class Transaction implements ITransaction {
       } else throw e;
     }
     ctx.current = undefined;
+    this.context.isWriteable = true;
+
     return v;
   }
   retry() {
@@ -173,7 +182,7 @@ class Transaction implements ITransaction {
     this.isAborted = false;
     return this;
   }
-  commit() {
+  commit(): TransactionReport {
     if (this.isCommitted) {
       throw new Error(
         "Cannot commit transaction which has already been committed"
@@ -191,10 +200,21 @@ class Transaction implements ITransaction {
     }
 
     let alteredRefs = new Map();
-    for (let refEntry of this.context.getRefEntries()) {
-      let [ref, value] = refEntry;
-      alteredRefs.set(ref, value);
-      ref.unsafeWrite(value);
+    try {
+      for (let refEntry of this.context.getRefEntries()) {
+        let [ref, current] = refEntry;
+        if (ref.version !== current.version) {
+          // drift occurred, retry
+          throw retrySignal;
+        }
+        alteredRefs.set(ref, current.value);
+        ref.unsafeWrite(current.value);
+      }
+    } catch (e) {
+      if (e === retrySignal) {
+        this.retry();
+        return this.commit();
+      }
     }
     this.isCommitted = true;
     return { alteredRefs };

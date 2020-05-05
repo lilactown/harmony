@@ -19,6 +19,17 @@ test("create two refs, change them, commit them", () => {
   expect(deref(bar)).toBe(4);
 });
 
+test("can't write in doIn", () => {
+  let foo = ref(0);
+  let tx = transaction();
+
+  expect(() =>
+    tx.doIn(() => {
+      set(foo, 1);
+    })
+  ).toThrow;
+});
+
 describe("abort and retry", () => {
   let foo = ref(0);
   let tx = transaction();
@@ -97,7 +108,110 @@ describe("iterable", () => {
   test("destructuring", () => {
     let foo = ref(0);
 
-    let tx = transaction();
+    let tx = transaction()
+      .add(() => {
+        set(foo, 2);
+      })
+      .add(() => {
+        alter(foo, (foo) => foo * 2);
+      });
+
+    let [t1, t2, t3] = tx;
+    expect(t3).toBe(undefined);
+
+    t1();
+    expect(tx.doIn(() => deref(foo))).toBe(2);
+    expect(deref(foo)).toBe(0);
+
+    t2();
+
+    expect(tx.doIn(() => deref(foo))).toBe(4);
+    expect(deref(foo)).toBe(0);
+
+    tx.commit();
+    expect(deref(foo)).toBe(4);
+  });
+});
+
+describe("concurrent txs", () => {
+  test("disjoint refs", () => {
+    let foo = ref(0);
+    let bar = ref(0);
+
+    let txFoo = transaction().add(() => {
+      set(foo, 1);
+    });
+
+    let txBar = transaction().add(() => {
+      set(bar, 2);
+    });
+
+    expect(deref(foo)).toBe(0);
+    expect(deref(bar)).toBe(0);
+
+    let [t1] = txFoo;
+    let [t2] = txBar;
+    t1();
+
+    expect(deref(foo)).toBe(0);
+    expect(deref(bar)).toBe(0);
+
+    t2();
+
+    expect(deref(foo)).toBe(0);
+    expect(deref(bar)).toBe(0);
+
+    txFoo.commit();
+
+    expect(deref(foo)).toBe(1);
+    expect(deref(bar)).toBe(0);
+
+    txBar.commit();
+
+    expect(deref(foo)).toBe(1);
+    expect(deref(bar)).toBe(2);
+  });
+
+  test("related refs", () => {
+    let foo = ref(0);
+    let bar = ref(0);
+
+    let txFooBar = transaction().add(() => {
+      set(foo, 1);
+      set(bar, 2);
+    });
+
+    let txBar = transaction().add(() => {
+      alter(bar, (x) => x + 1);
+    });
+
+    expect(deref(foo)).toBe(0);
+    expect(deref(bar)).toBe(0);
+
+    let [t1] = txFooBar;
+    let [t2] = txBar;
+    t1();
+
+    expect(deref(foo)).toBe(0);
+    expect(deref(bar)).toBe(0);
+
+    t2();
+
+    expect(deref(foo)).toBe(0);
+    expect(txFooBar.doIn(() => deref(foo))).toBe(1);
+    expect(txFooBar.doIn(() => deref(bar))).toBe(2);
+    expect(deref(bar)).toBe(0);
+    expect(txBar.doIn(() => deref(bar))).toBe(1);
+
+    txFooBar.commit();
+
+    expect(deref(foo)).toBe(1);
+    expect(deref(bar)).toBe(2);
+
+    txBar.commit();
+
+    expect(deref(foo)).toBe(1);
+    expect(deref(bar)).toBe(3);
   });
 });
 
