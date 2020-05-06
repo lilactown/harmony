@@ -224,7 +224,9 @@ class Transaction implements ITransaction {
           throw restartSignal;
         }
         alteredRefs.set(ref, current.value);
-        ref.unsafeWrite(current.value);
+        if (this.isParentTransaction()) {
+          ref.unsafeWrite(current.value);
+        }
       }
     } catch (e) {
       if (e === restartSignal) {

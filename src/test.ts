@@ -219,7 +219,6 @@ describe("concurrent txs", () => {
 
     let txOuter = transaction()
       .add(() => {
-        console.log("hi");
         transaction()
           .add(() => {
             set(foo, 1);
@@ -227,13 +226,21 @@ describe("concurrent txs", () => {
           .commit();
       })
       .add(() => {
-        alter(foo, (x) => x + 1);
+        let txInner = transaction().add(() => {
+          alter(foo, (x) => x + 1);
+        });
+
+        let [thunk] = txInner;
+        thunk();
+
+        txInner.commit();
       });
 
-    expect(deref(foo)).toBe(0);
     for (let thunk of txOuter) {
       thunk();
     }
+
+    expect(deref(foo)).toBe(0);
     expect(txOuter.doIn(() => deref(foo))).toBe(2);
 
     txOuter.commit();
