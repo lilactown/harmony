@@ -65,7 +65,7 @@ describe("abort and retry", () => {
       error = e;
     }
     expect(error.message).toBe(
-      "Cannot commit transaction which has been aborted. Retry it first"
+      "Cannot commit transaction which has been aborted. Restart it first"
     );
   });
 
@@ -75,7 +75,7 @@ describe("abort and retry", () => {
       .commit();
     expect(deref(foo)).toBe(1);
 
-    tx.retry().commit();
+    tx.restart().commit();
 
     expect(deref(foo)).toBe(-1);
   });
@@ -176,12 +176,12 @@ describe("concurrent txs", () => {
     let foo = ref(0);
     let bar = ref(0);
 
-    let txFooBar = transaction().add(() => {
+    let txFooBar = transaction({ autoRetry: true }).add(() => {
       set(foo, 1);
       set(bar, 2);
     });
 
-    let txBar = transaction().add(() => {
+    let txBar = transaction({ autoRetry: true }).add(() => {
       alter(bar, (x) => x + 1);
     });
 
@@ -213,15 +213,31 @@ describe("concurrent txs", () => {
     expect(deref(foo)).toBe(1);
     expect(deref(bar)).toBe(3);
   });
+
+  test("nested", () => {
+    let foo = ref(0);
+
+    let txOuter = transaction()
+      .add(() => {
+        console.log("hi");
+        transaction()
+          .add(() => {
+            set(foo, 1);
+          })
+          .commit();
+      })
+      .add(() => {
+        alter(foo, (x) => x + 1);
+      });
+
+    expect(deref(foo)).toBe(0);
+    for (let thunk of txOuter) {
+      thunk();
+    }
+    expect(txOuter.doIn(() => deref(foo))).toBe(2);
+
+    txOuter.commit();
+
+    expect(deref(foo)).toBe(2);
+  });
 });
-
-// // // let nested = ref(0);
-
-// // // transact(() => {
-// // //   alter(nested, (n) => n + 1);
-// // //   transact(() => {
-// // //     alter(nested, (n) => n - 2);
-// // //   });
-// // // });
-
-// // // console.log("nested", "sync+sync", deref(nested) === -1);

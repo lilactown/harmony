@@ -28,15 +28,16 @@ class Ref<T> implements IRef<T> {
 interface ITransactionContext {
   id: txID;
   isWriteable: boolean;
+  parent: ITransaction;
   read<T>(ref: IRef<T>): T;
   write<T>(ref: IRef<T>, v: T): T;
   getRefEntries(): any;
 }
 
-let nextTxID = 0;
+let _idSrc = 0;
 
-function genTxID() {
-  return "tx" + nextTxID++;
+function nextTxId() {
+  return "tx" + _idSrc++;
 }
 
 type RefMap<T> = Map<IRef<T>, { value: T; version: refVersion }>;
@@ -50,10 +51,12 @@ class TransactionContext implements ITransactionContext {
   id: txID;
   currentRefValues: RefMap<any>;
   isWriteable: boolean;
-  constructor() {
-    this.id = genTxID();
+  parent: ITransaction;
+  constructor(parent: ITransaction) {
+    this.id = nextTxId();
     this.currentRefValues = new Map();
     this.isWriteable = true;
+    this.parent = parent;
   }
   read<T>(ref: IRef<T>): T {
     if (this.currentRefValues.has(ref)) {
@@ -87,7 +90,8 @@ interface ThunkReport {}
 export interface ITransaction extends Iterable<Function> {
   add(thunk: () => any): ITransaction;
   doIn<T>(f: () => T): T;
-  retry(): ITransaction;
+  //  next(): () => any;
+  restart(): ITransaction;
   commit(): TransactionReport;
   isCommitted: boolean;
   isAborted: boolean;
@@ -101,7 +105,7 @@ let ctx: { current: undefined | ITransactionContext } = {
   current: undefined,
 };
 
-let retrySignal = {};
+let restartSignal = {};
 
 class Transaction implements ITransaction {
   private context: ITransactionContext;
@@ -109,12 +113,17 @@ class Transaction implements ITransaction {
   private realizedThunks: ThunkContext[];
   isCommitted: boolean;
   isAborted: boolean;
-  constructor() {
-    this.context = new TransactionContext();
+  autoRetry: boolean;
+  constructor(autoRetry: boolean, context?: ITransactionContext) {
+    this.context = context || new TransactionContext(this);
     this.unrealizedThunks = [];
     this.realizedThunks = [];
     this.isCommitted = false;
     this.isAborted = false;
+    this.autoRetry = autoRetry;
+  }
+  isParentTransaction() {
+    return this.context.parent === this;
   }
   *[Symbol.iterator]() {
     while (!this.isAborted && this.unrealizedThunks.length) {
@@ -130,8 +139,12 @@ class Transaction implements ITransaction {
           error = e;
         }
         ctx.current = undefined;
-        if (error === retrySignal) {
-          this.retry();
+        if (error === restartSignal) {
+          if (this.isParentTransaction()) {
+            this.restart();
+          }
+          // not sure if we should throw or just continue the iterator...
+          throw new Error("Transaction was restarted");
         } else if (error) {
           this.isAborted = true;
           throw error;
@@ -145,7 +158,7 @@ class Transaction implements ITransaction {
     }
     if (this.isAborted) {
       throw new Error(
-        "Cannot add to transaction which has been aborted. Retry it first"
+        "Cannot add to transaction which has been aborted. Restart it first"
       );
     }
 
@@ -161,8 +174,8 @@ class Transaction implements ITransaction {
     try {
       v = f();
     } catch (e) {
-      if (e === retrySignal) {
-        throw new Error("Executions in doIn cannot retry.");
+      if (e === restartSignal) {
+        throw new Error("Executions in doIn cannot restart.");
       } else throw e;
     }
     ctx.current = undefined;
@@ -170,15 +183,19 @@ class Transaction implements ITransaction {
 
     return v;
   }
-  retry() {
+  restart() {
     if (this.isCommitted) {
-      throw new Error("Cannot retry transaction which has been committed");
+      throw new Error("Cannot restart transaction which has been committed");
     }
     // general strategy atm is to move all thunks into unrealized state
     // reset context and then exec them at a later time
     this.unrealizedThunks = this.realizedThunks.map(({ fn }) => fn);
-    this.realizedThunks = [];
-    this.context = new TransactionContext();
+
+    // this should never be reached by a nested tx
+    if (this.context.parent !== this) {
+      throw new Error("Invariant: Nested transaction should never be retried");
+    }
+    this.context = new TransactionContext(this);
     this.isAborted = false;
     return this;
   }
@@ -190,10 +207,9 @@ class Transaction implements ITransaction {
     }
     if (this.isAborted) {
       throw new Error(
-        "Cannot commit transaction which has been aborted. Retry it first"
+        "Cannot commit transaction which has been aborted. Restart it first"
       );
     }
-
     // realize any left over thunks
     for (let thunk of this) {
       thunk();
@@ -205,15 +221,23 @@ class Transaction implements ITransaction {
         let [ref, current] = refEntry;
         if (ref.version !== current.version) {
           // drift occurred, retry
-          throw retrySignal;
+          throw restartSignal;
         }
         alteredRefs.set(ref, current.value);
         ref.unsafeWrite(current.value);
       }
     } catch (e) {
-      if (e === retrySignal) {
-        this.retry();
-        return this.commit();
+      if (e === restartSignal) {
+        if (this.isParentTransaction()) {
+          this.restart();
+          if (this.autoRetry) {
+            return this.commit();
+          }
+          throw new Error("Transaction restarted");
+        } else {
+          // bubble up restartSignal
+          throw e;
+        }
       }
     }
     this.isCommitted = true;
@@ -231,8 +255,10 @@ class Transaction implements ITransaction {
   }
 }
 
-export function transaction(): ITransaction {
-  return new Transaction();
+export function transaction(
+  { autoRetry } = { autoRetry: false }
+): ITransaction {
+  return new Transaction(autoRetry, ctx.current);
 }
 
 export function ref<T>(v: T): IRef<T> {
