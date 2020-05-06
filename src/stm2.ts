@@ -257,9 +257,7 @@ class Transaction implements ITransaction {
   }
 }
 
-export function transaction(
-  { autoRetry } = { autoRetry: false }
-): ITransaction {
+export function branch({ autoRetry } = { autoRetry: false }): ITransaction {
   return new Transaction(autoRetry, ctx.current);
 }
 

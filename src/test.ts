@@ -1,9 +1,9 @@
-import { ref, deref, set, alter, transaction } from "./stm2";
+import { ref, deref, set, alter, branch } from "./stm2";
 
 test("create two refs, change them, commit them", () => {
   let foo = ref(0);
   let bar = ref(2);
-  let tx = transaction();
+  let tx = branch();
 
   tx.add(() => {
     set(foo, 2);
@@ -21,7 +21,7 @@ test("create two refs, change them, commit them", () => {
 
 test("can't write in doIn", () => {
   let foo = ref(0);
-  let tx = transaction();
+  let tx = branch();
 
   expect(() =>
     tx.doIn(() => {
@@ -32,7 +32,7 @@ test("can't write in doIn", () => {
 
 describe("abort and retry", () => {
   let foo = ref(0);
-  let tx = transaction();
+  let tx = branch();
 
   test("throwing inside add does nothing (not executed yet)", () => {
     tx.add(() => {
@@ -70,7 +70,7 @@ describe("abort and retry", () => {
   });
 
   test("retrying", () => {
-    transaction()
+    branch()
       .add(() => set(foo, 1))
       .commit();
     expect(deref(foo)).toBe(1);
@@ -85,7 +85,7 @@ describe("iterable", () => {
   test("for of", () => {
     let foo = ref(0);
     let calls = 0;
-    let tx = transaction()
+    let tx = branch()
       .add(() => {
         calls++;
         set(foo, 10);
@@ -108,7 +108,7 @@ describe("iterable", () => {
   test("destructuring", () => {
     let foo = ref(0);
 
-    let tx = transaction()
+    let tx = branch()
       .add(() => {
         set(foo, 2);
       })
@@ -138,11 +138,11 @@ describe("concurrent txs", () => {
     let foo = ref(0);
     let bar = ref(0);
 
-    let txFoo = transaction().add(() => {
+    let txFoo = branch().add(() => {
       set(foo, 1);
     });
 
-    let txBar = transaction().add(() => {
+    let txBar = branch().add(() => {
       set(bar, 2);
     });
 
@@ -176,12 +176,12 @@ describe("concurrent txs", () => {
     let foo = ref(0);
     let bar = ref(0);
 
-    let txFooBar = transaction({ autoRetry: true }).add(() => {
+    let txFooBar = branch({ autoRetry: true }).add(() => {
       set(foo, 1);
       set(bar, 2);
     });
 
-    let txBar = transaction({ autoRetry: true }).add(() => {
+    let txBar = branch({ autoRetry: true }).add(() => {
       alter(bar, (x) => x + 1);
     });
 
@@ -217,16 +217,16 @@ describe("concurrent txs", () => {
   test("nested", () => {
     let foo = ref(0);
 
-    let txOuter = transaction()
+    let txOuter = branch()
       .add(() => {
-        transaction()
+        branch()
           .add(() => {
             set(foo, 1);
           })
           .commit();
       })
       .add(() => {
-        let txInner = transaction().add(() => {
+        let txInner = branch().add(() => {
           alter(foo, (x) => x + 1);
         });
 
