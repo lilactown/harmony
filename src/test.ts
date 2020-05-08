@@ -30,7 +30,7 @@ test("can't write in doIn", () => {
   ).toThrow;
 });
 
-describe("abort and retry", () => {
+describe("abort and rebase", () => {
   let foo = ref(0);
   let tx = branch();
 
@@ -69,7 +69,7 @@ describe("abort and retry", () => {
     );
   });
 
-  test("retrying", () => {
+  test("rebaseing", () => {
     branch()
       .add(() => set(foo, 1))
       .commit();
@@ -176,12 +176,12 @@ describe("concurrent txs", () => {
     let foo = ref(0);
     let bar = ref(0);
 
-    let txFooBar = branch({ autoRetry: true }).add(() => {
+    let txFooBar = branch({ autoRebase: true }).add(() => {
       set(foo, 1);
       set(bar, 2);
     });
 
-    let txBar = branch({ autoRetry: true }).add(() => {
+    let txBar = branch({ autoRebase: true }).add(() => {
       alter(bar, (x) => x + 1);
     });
 
