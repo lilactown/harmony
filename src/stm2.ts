@@ -91,7 +91,7 @@ export interface ITransaction extends Iterable<Function> {
   add(thunk: () => any): ITransaction;
   doIn<T>(f: () => T): T;
   //  next(): () => any;
-  restart(): ITransaction;
+  rebase(): ITransaction;
   commit(): TransactionReport;
   isCommitted: boolean;
   isAborted: boolean;
@@ -105,7 +105,7 @@ let ctx: { current: undefined | ITransactionContext } = {
   current: undefined,
 };
 
-let restartSignal = {};
+let rebaseSignal = {};
 
 class Transaction implements ITransaction {
   private context: ITransactionContext;
@@ -139,12 +139,12 @@ class Transaction implements ITransaction {
           error = e;
         }
         ctx.current = undefined;
-        if (error === restartSignal) {
+        if (error === rebaseSignal) {
           if (this.isParentTransaction()) {
-            this.restart();
+            this.rebase();
           }
           // not sure if we should throw or just continue the iterator...
-          throw new Error("Transaction was restarted");
+          throw new Error("Transaction was restarted; rebasing");
         } else if (error) {
           this.isAborted = true;
           throw error;
@@ -158,7 +158,7 @@ class Transaction implements ITransaction {
     }
     if (this.isAborted) {
       throw new Error(
-        "Cannot add to transaction which has been aborted. Restart it first"
+        "Cannot add to transaction which has been aborted. Rebase it first"
       );
     }
 
@@ -174,8 +174,8 @@ class Transaction implements ITransaction {
     try {
       v = f();
     } catch (e) {
-      if (e === restartSignal) {
-        throw new Error("Executions in doIn cannot restart.");
+      if (e === rebaseSignal) {
+        throw new Error("Executions in doIn cannot cause a rebase.");
       } else throw e;
     }
     ctx.current = undefined;
@@ -183,9 +183,9 @@ class Transaction implements ITransaction {
 
     return v;
   }
-  restart() {
+  rebase() {
     if (this.isCommitted) {
-      throw new Error("Cannot restart transaction which has been committed");
+      throw new Error("Cannot rebase transaction which has been committed");
     }
     // general strategy atm is to move all thunks into unrealized state
     // reset context and then exec them at a later time
@@ -207,7 +207,7 @@ class Transaction implements ITransaction {
     }
     if (this.isAborted) {
       throw new Error(
-        "Cannot commit transaction which has been aborted. Restart it first"
+        "Cannot commit transaction which has been aborted. Rebase it first"
       );
     }
     // realize any left over thunks
@@ -221,7 +221,7 @@ class Transaction implements ITransaction {
         let [ref, current] = refEntry;
         if (ref.version !== current.version) {
           // drift occurred, rebase
-          throw restartSignal;
+          throw rebaseSignal;
         }
         alteredRefs.set(ref, current.value);
         if (this.isParentTransaction()) {
@@ -229,15 +229,15 @@ class Transaction implements ITransaction {
         }
       }
     } catch (e) {
-      if (e === restartSignal) {
+      if (e === rebaseSignal) {
         if (this.isParentTransaction()) {
-          this.restart();
+          this.rebase();
           if (this.autoRebase) {
             return this.commit();
           }
-          throw new Error("Transaction restarted");
+          throw new Error("Transaction rebased");
         } else {
-          // bubble up restartSignal
+          // bubble up rebase
           throw e;
         }
       }

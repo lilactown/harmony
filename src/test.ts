@@ -65,7 +65,7 @@ describe("abort and rebase", () => {
       error = e;
     }
     expect(error.message).toBe(
-      "Cannot commit transaction which has been aborted. Restart it first"
+      "Cannot commit transaction which has been aborted. Rebase it first"
     );
   });
 
@@ -75,7 +75,7 @@ describe("abort and rebase", () => {
       .commit();
     expect(deref(foo)).toBe(1);
 
-    tx.restart().commit();
+    tx.rebase().commit();
 
     expect(deref(foo)).toBe(-1);
   });
