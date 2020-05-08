@@ -97,7 +97,7 @@ export interface ITransaction extends Iterable<Function> {
   isAborted: boolean;
 
   onExecute(f: (report: ThunkReport) => void): () => void;
-  onRetry(f: () => void): () => void;
+  onRebase(f: () => void): () => void;
   onCommit(f: (tx: TransactionReport) => void): () => void;
 }
 
@@ -113,14 +113,14 @@ class Transaction implements ITransaction {
   private realizedThunks: ThunkContext[];
   isCommitted: boolean;
   isAborted: boolean;
-  autoRetry: boolean;
-  constructor(autoRetry: boolean, context?: ITransactionContext) {
+  autoRebase: boolean;
+  constructor(autoRebase: boolean, context?: ITransactionContext) {
     this.context = context || new TransactionContext(this);
     this.unrealizedThunks = [];
     this.realizedThunks = [];
     this.isCommitted = false;
     this.isAborted = false;
-    this.autoRetry = autoRetry;
+    this.autoRebase = autoRebase;
   }
   isParentTransaction() {
     return this.context.parent === this;
@@ -220,7 +220,7 @@ class Transaction implements ITransaction {
       for (let refEntry of this.context.getRefEntries()) {
         let [ref, current] = refEntry;
         if (ref.version !== current.version) {
-          // drift occurred, retry
+          // drift occurred, rebase
           throw restartSignal;
         }
         alteredRefs.set(ref, current.value);
@@ -232,7 +232,7 @@ class Transaction implements ITransaction {
       if (e === restartSignal) {
         if (this.isParentTransaction()) {
           this.restart();
-          if (this.autoRetry) {
+          if (this.autoRebase) {
             return this.commit();
           }
           throw new Error("Transaction restarted");
@@ -249,7 +249,7 @@ class Transaction implements ITransaction {
   onExecute(f: (e: ThunkReport) => void) {
     return () => void 0;
   }
-  onRetry(f: () => void) {
+  onRebase(f: () => void) {
     return () => void 0;
   }
   onCommit(f: (e: TransactionReport) => void) {
@@ -257,8 +257,8 @@ class Transaction implements ITransaction {
   }
 }
 
-export function branch({ autoRetry } = { autoRetry: false }): ITransaction {
-  return new Transaction(autoRetry, ctx.current);
+export function branch({ autoRebase } = { autoRebase: false }): ITransaction {
+  return new Transaction(autoRebase, ctx.current);
 }
 
 export function ref<T>(v: T): IRef<T> {
