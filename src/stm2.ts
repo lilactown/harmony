@@ -3,7 +3,7 @@ type txID = string;
 type refVersion = number;
 
 interface IRef<T> {
-  read(): T;
+  unsafeRead(): T;
   version: refVersion;
   unsafeWrite(v: T): T;
 }
@@ -15,7 +15,7 @@ class Ref<T> implements IRef<T> {
     this.current = init;
     this.version = 0;
   }
-  read() {
+  unsafeRead() {
     return this.current;
   }
   unsafeWrite(v: T) {
@@ -59,9 +59,9 @@ class TransactionContext implements ITransactionContext {
     }
     // should we add read values to tx??
     if (this.isWriteable) {
-      return this.write(ref, ref.read());
+      return this.write(ref, ref.unsafeRead());
     }
-    return ref.read();
+    return ref.unsafeRead();
   }
   write<T>(ref: IRef<T>, v: T): T {
     if (!this.isWriteable) {
@@ -272,7 +272,7 @@ export function deref<T>(ref: IRef<T>): T {
   if (ctx.current) {
     return ctx.current.read(ref);
   }
-  return ref.read();
+  return ref.unsafeRead();
 }
 
 export function set<T>(ref: IRef<T>, v: T): T {
