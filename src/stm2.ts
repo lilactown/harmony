@@ -87,10 +87,6 @@ export interface ITransaction {
   commit(): ITransaction;
   isCommitted: boolean;
   isAborted: boolean;
-
-  onExecute(f: () => void): () => void;
-  onRebase(f: () => void): () => void;
-  onCommit(f: () => void): () => void;
 }
 
 let ctx: { current: undefined | ITransactionContext } = {
@@ -246,18 +242,6 @@ class Transaction implements ITransaction {
     this.isCommitted = true;
     return this;
   }
-
-  onExecute(f: () => void) {
-    return () => void 0;
-  }
-
-  onRebase(f: () => void) {
-    return () => void 0;
-  }
-
-  onCommit(f: () => void) {
-    return () => void 0;
-  }
 }
 
 export function branch({ autoRebase } = { autoRebase: false }): ITransaction {
@@ -290,16 +274,6 @@ export function alter<T>(
   return set(ref, f(deref(ref), ...args));
 }
 
-export function ensure(ref: IRef<any>): void {
-  set(ref, deref(ref));
+export function ensure<T>(ref: IRef<T>): T {
+  return set(ref, deref(ref));
 }
-
-export function commute<T>(
-  ref: IRef<any>,
-  f: (current: T, ...args: any[]) => T,
-  ...args: any[]
-) {}
-
-export function defer(f: Function): void {}
-
-export function compensate(f: (...args: any[]) => Function): void {}
