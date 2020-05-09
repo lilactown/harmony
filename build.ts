@@ -5,7 +5,7 @@ import * as path from "path";
 import * as ts from "typescript";
 import * as tsickle from "tsickle";
 
-let projectDir = ".";
+let projectDir = "./";
 
 function loadConfig() {
   let configFile = ts.findConfigFile(projectDir, fs.existsSync);
@@ -89,6 +89,9 @@ function main(): number {
     );
     return 1;
   }
+
+  // outDir needs to be an absolute path for tsickle
+  config.options.outDir = path.resolve(config.options.outDir);
 
   // Run tsickle+TSC to convert inputs to Closure JS files.
   const result = toClosureJS(
