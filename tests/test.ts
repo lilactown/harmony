@@ -1,4 +1,4 @@
-import { ref, deref, set, alter, branch } from "./stm2";
+import { ref, deref, set, alter, branch } from "../src";
 
 test("create two refs, change them, commit them", () => {
   let foo = ref(0);
