@@ -57,7 +57,7 @@ describe("abort and rebase", () => {
     expect(deref(foo)).toBe(0);
   });
 
-  test("can't commit an aborted transaction", () => {
+  test("can't commit an aborted branch", () => {
     let error;
     try {
       tx.commit();
@@ -65,7 +65,7 @@ describe("abort and rebase", () => {
       error = e;
     }
     expect(error.message).toBe(
-      "Cannot commit transaction which has been aborted. Rebase it first"
+      "Cannot commit branch which has been aborted. Rebase it first"
     );
   });
 

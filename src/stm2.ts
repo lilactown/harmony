@@ -25,10 +25,10 @@ class Ref<T> implements IRef<T> {
   }
 }
 
-interface ITransactionContext {
+interface IBranchContext {
   id: txID;
   isWriteable: boolean;
-  parent: ITransaction;
+  parent: IBranch;
   read<T>(ref: IRef<T>): T;
   write<T>(ref: IRef<T>, v: T): T;
   getRefEntries(): any;
@@ -42,12 +42,12 @@ function nextTxId() {
 
 type RefMap<T> = Map<IRef<T>, { value: T; version: refVersion }>;
 
-class TransactionContext implements ITransactionContext {
+class BranchContext implements IBranchContext {
   id: txID;
   currentRefValues: RefMap<any>;
   isWriteable: boolean;
-  parent: ITransaction;
-  constructor(parent: ITransaction) {
+  parent: IBranch;
+  constructor(parent: IBranch) {
     this.id = nextTxId();
     this.currentRefValues = new Map();
     this.isWriteable = true;
@@ -76,34 +76,34 @@ class TransactionContext implements ITransactionContext {
   }
 }
 
-export interface ITransaction {
+export interface IBranch {
   // extends Iterable<Function>
-  add(thunk: () => any): ITransaction;
+  add(thunk: () => any): IBranch;
   doIn<T>(f: () => T): T;
   //  next(): () => any;
-  rebase(): ITransaction;
-  flush(): ITransaction;
-  flushNext(): ITransaction;
-  commit(): ITransaction;
+  rebase(): IBranch;
+  flush(): IBranch;
+  flushNext(): IBranch;
+  commit(): IBranch;
   isCommitted: boolean;
   isAborted: boolean;
 }
 
-let ctx: { current: undefined | ITransactionContext } = {
+let ctx: { current: undefined | IBranchContext } = {
   current: undefined,
 };
 
 let rebaseSignal = {};
 
-class Transaction implements ITransaction {
-  private context: ITransactionContext;
+class Branch implements IBranch {
+  private context: IBranchContext;
   private unrealizedThunks: Function[];
   private realizedThunks: Function[];
   isCommitted: boolean;
   isAborted: boolean;
   autoRebase: boolean;
-  constructor(autoRebase: boolean, context?: ITransactionContext) {
-    this.context = context || new TransactionContext(this);
+  constructor(autoRebase: boolean, context?: IBranchContext) {
+    this.context = context || new BranchContext(this);
     this.unrealizedThunks = [];
     this.realizedThunks = [];
     this.isCommitted = false;
@@ -111,17 +111,17 @@ class Transaction implements ITransaction {
     this.autoRebase = autoRebase;
   }
 
-  isParentTransaction() {
+  isParentBranch() {
     return this.context.parent === this;
   }
 
   add(thunk: () => any) {
     if (this.isCommitted) {
-      throw new Error("Cannot add to transaction which has been committed");
+      throw new Error("Cannot add to branch which has been committed");
     }
     if (this.isAborted) {
       throw new Error(
-        "Cannot add to transaction which has been aborted. Rebase it first"
+        "Cannot add to branch which has been aborted. Rebase it first"
       );
     }
 
@@ -148,7 +148,7 @@ class Transaction implements ITransaction {
     return v;
   }
 
-  flushNext(): ITransaction {
+  flushNext(): IBranch {
     let [thunk, ...rest] = this.unrealizedThunks;
     this.realizedThunks.push(thunk);
     this.unrealizedThunks = rest;
@@ -162,11 +162,11 @@ class Transaction implements ITransaction {
     }
     ctx.current = undefined;
     if (error === rebaseSignal) {
-      if (this.isParentTransaction()) {
+      if (this.isParentBranch()) {
         this.rebase();
       }
       // not sure if we should throw or just continue...
-      throw new Error("Transaction was restarted; rebasing");
+      throw new Error("Branch was restarted; rebasing");
     } else if (error) {
       this.isAborted = true;
       throw error;
@@ -175,7 +175,7 @@ class Transaction implements ITransaction {
     return this;
   }
 
-  flush(): ITransaction {
+  flush(): IBranch {
     while (!this.isAborted && this.unrealizedThunks.length) {
       this.flushNext();
     }
@@ -185,7 +185,7 @@ class Transaction implements ITransaction {
 
   rebase() {
     if (this.isCommitted) {
-      throw new Error("Cannot rebase transaction which has been committed");
+      throw new Error("Cannot rebase branch which has been committed");
     }
     // general strategy atm is to move all thunks into unrealized state
     // reset context and then exec them at a later time
@@ -193,22 +193,20 @@ class Transaction implements ITransaction {
 
     // this should never be reached by a nested tx
     if (this.context.parent !== this) {
-      throw new Error("Invariant: Nested transaction should never be rebased");
+      throw new Error("Invariant: Nested branch should never be rebased");
     }
-    this.context = new TransactionContext(this);
+    this.context = new BranchContext(this);
     this.isAborted = false;
     return this;
   }
 
-  commit(): ITransaction {
+  commit(): IBranch {
     if (this.isCommitted) {
-      throw new Error(
-        "Cannot commit transaction which has already been committed"
-      );
+      throw new Error("Cannot commit branch which has already been committed");
     }
     if (this.isAborted) {
       throw new Error(
-        "Cannot commit transaction which has been aborted. Rebase it first"
+        "Cannot commit branch which has been aborted. Rebase it first"
       );
     }
     // realize any left over thunks
@@ -221,18 +219,18 @@ class Transaction implements ITransaction {
           // drift occurred, rebase
           throw rebaseSignal;
         }
-        if (this.isParentTransaction()) {
+        if (this.isParentBranch()) {
           ref.unsafeWrite(current.value);
         }
       }
     } catch (e) {
       if (e === rebaseSignal) {
-        if (this.isParentTransaction()) {
+        if (this.isParentBranch()) {
           this.rebase();
           if (this.autoRebase) {
             return this.commit();
           }
-          throw new Error("Transaction rebased");
+          throw new Error("Branch rebased");
         } else {
           // bubble up rebase
           throw e;
@@ -244,8 +242,8 @@ class Transaction implements ITransaction {
   }
 }
 
-export function branch({ autoRebase } = { autoRebase: false }): ITransaction {
-  return new Transaction(autoRebase, ctx.current);
+export function branch({ autoRebase } = { autoRebase: false }): IBranch {
+  return new Branch(autoRebase, ctx.current);
 }
 
 export function ref<T>(v: T): IRef<T> {
@@ -263,7 +261,7 @@ export function set<T>(ref: IRef<T>, v: T): T {
   if (ctx.current) {
     return ctx.current.write(ref, v);
   }
-  throw new Error("Cannot set ref outside of transaction");
+  throw new Error("Cannot set ref outside of branch");
 }
 
 export function alter<T>(
