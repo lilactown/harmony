@@ -81,58 +81,6 @@ describe("abort and rebase", () => {
   });
 });
 
-describe("iterable", () => {
-  test("for of", () => {
-    let foo = ref(0);
-    let calls = 0;
-    let tx = branch()
-      .add(() => {
-        calls++;
-        set(foo, 10);
-      })
-      .add(() => {
-        calls++;
-        alter(foo, (x) => x - 13);
-      });
-
-    for (let exec of tx) {
-      exec();
-    }
-
-    tx.commit();
-
-    expect(deref(foo)).toBe(-3);
-    expect(calls).toBe(2);
-  });
-
-  test("destructuring", () => {
-    let foo = ref(0);
-
-    let tx = branch()
-      .add(() => {
-        set(foo, 2);
-      })
-      .add(() => {
-        alter(foo, (foo) => foo * 2);
-      });
-
-    let [t1, t2, t3] = tx;
-    expect(t3).toBe(undefined);
-
-    t1();
-    expect(tx.doIn(() => deref(foo))).toBe(2);
-    expect(deref(foo)).toBe(0);
-
-    t2();
-
-    expect(tx.doIn(() => deref(foo))).toBe(4);
-    expect(deref(foo)).toBe(0);
-
-    tx.commit();
-    expect(deref(foo)).toBe(4);
-  });
-});
-
 describe("concurrent txs", () => {
   test("disjoint refs", () => {
     let foo = ref(0);
@@ -149,14 +97,12 @@ describe("concurrent txs", () => {
     expect(deref(foo)).toBe(0);
     expect(deref(bar)).toBe(0);
 
-    let [t1] = txFoo;
-    let [t2] = txBar;
-    t1();
+    txFoo.flushNext();
 
     expect(deref(foo)).toBe(0);
     expect(deref(bar)).toBe(0);
 
-    t2();
+    txBar.flushNext();
 
     expect(deref(foo)).toBe(0);
     expect(deref(bar)).toBe(0);
@@ -188,14 +134,12 @@ describe("concurrent txs", () => {
     expect(deref(foo)).toBe(0);
     expect(deref(bar)).toBe(0);
 
-    let [t1] = txFooBar;
-    let [t2] = txBar;
-    t1();
+    txFooBar.flushNext();
 
     expect(deref(foo)).toBe(0);
     expect(deref(bar)).toBe(0);
 
-    t2();
+    txBar.flushNext();
 
     expect(deref(foo)).toBe(0);
     expect(txFooBar.doIn(() => deref(foo))).toBe(1);
@@ -230,15 +174,12 @@ describe("concurrent txs", () => {
           alter(foo, (x) => x + 1);
         });
 
-        let [thunk] = txInner;
-        thunk();
+        txInner.flush();
 
         txInner.commit();
       });
 
-    for (let thunk of txOuter) {
-      thunk();
-    }
+    txOuter.flush();
 
     expect(deref(foo)).toBe(0);
     expect(txOuter.doIn(() => deref(foo))).toBe(2);

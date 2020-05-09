@@ -42,11 +42,6 @@ function nextTxId() {
 
 type RefMap<T> = Map<IRef<T>, { value: T; version: refVersion }>;
 
-interface ThunkContext {
-  fn: Function;
-  dependentRefs: { ref: IRef<any>; version: refVersion }[];
-}
-
 class TransactionContext implements ITransactionContext {
   id: txID;
   currentRefValues: RefMap<any>;
@@ -81,24 +76,21 @@ class TransactionContext implements ITransactionContext {
   }
 }
 
-interface TransactionReport {
-  alteredRefs: RefMap<any>;
-}
-
-interface ThunkReport {}
-
-export interface ITransaction extends Iterable<Function> {
+export interface ITransaction {
+  // extends Iterable<Function>
   add(thunk: () => any): ITransaction;
   doIn<T>(f: () => T): T;
   //  next(): () => any;
   rebase(): ITransaction;
-  commit(): TransactionReport;
+  flush(): ITransaction;
+  flushNext(): ITransaction;
+  commit(): ITransaction;
   isCommitted: boolean;
   isAborted: boolean;
 
-  onExecute(f: (report: ThunkReport) => void): () => void;
+  onExecute(f: () => void): () => void;
   onRebase(f: () => void): () => void;
-  onCommit(f: (tx: TransactionReport) => void): () => void;
+  onCommit(f: () => void): () => void;
 }
 
 let ctx: { current: undefined | ITransactionContext } = {
@@ -110,7 +102,7 @@ let rebaseSignal = {};
 class Transaction implements ITransaction {
   private context: ITransactionContext;
   private unrealizedThunks: Function[];
-  private realizedThunks: ThunkContext[];
+  private realizedThunks: Function[];
   isCommitted: boolean;
   isAborted: boolean;
   autoRebase: boolean;
@@ -122,36 +114,11 @@ class Transaction implements ITransaction {
     this.isAborted = false;
     this.autoRebase = autoRebase;
   }
+
   isParentTransaction() {
     return this.context.parent === this;
   }
-  *[Symbol.iterator]() {
-    while (!this.isAborted && this.unrealizedThunks.length) {
-      let [thunk, ...rest] = this.unrealizedThunks;
-      this.realizedThunks.push({ fn: thunk, dependentRefs: [] });
-      this.unrealizedThunks = rest;
-      yield () => {
-        let error;
-        ctx.current = this.context;
-        try {
-          thunk();
-        } catch (e) {
-          error = e;
-        }
-        ctx.current = undefined;
-        if (error === rebaseSignal) {
-          if (this.isParentTransaction()) {
-            this.rebase();
-          }
-          // not sure if we should throw or just continue the iterator...
-          throw new Error("Transaction was restarted; rebasing");
-        } else if (error) {
-          this.isAborted = true;
-          throw error;
-        }
-      };
-    }
-  }
+
   add(thunk: () => any) {
     if (this.isCommitted) {
       throw new Error("Cannot add to transaction which has been committed");
@@ -166,6 +133,7 @@ class Transaction implements ITransaction {
 
     return this;
   }
+
   doIn<T>(f: () => T): T {
     let v;
     this.context.isWriteable = false;
@@ -183,23 +151,60 @@ class Transaction implements ITransaction {
 
     return v;
   }
+
+  flushNext(): ITransaction {
+    let [thunk, ...rest] = this.unrealizedThunks;
+    this.realizedThunks.push(thunk);
+    this.unrealizedThunks = rest;
+
+    let error;
+    ctx.current = this.context;
+    try {
+      thunk();
+    } catch (e) {
+      error = e;
+    }
+    ctx.current = undefined;
+    if (error === rebaseSignal) {
+      if (this.isParentTransaction()) {
+        this.rebase();
+      }
+      // not sure if we should throw or just continue...
+      throw new Error("Transaction was restarted; rebasing");
+    } else if (error) {
+      this.isAborted = true;
+      throw error;
+    }
+
+    return this;
+  }
+
+  flush(): ITransaction {
+    while (!this.isAborted && this.unrealizedThunks.length) {
+      this.flushNext();
+    }
+
+    return this;
+  }
+
   rebase() {
     if (this.isCommitted) {
       throw new Error("Cannot rebase transaction which has been committed");
     }
     // general strategy atm is to move all thunks into unrealized state
     // reset context and then exec them at a later time
-    this.unrealizedThunks = this.realizedThunks.map(({ fn }) => fn);
+    this.unrealizedThunks = this.realizedThunks.map((fn) => fn);
 
     // this should never be reached by a nested tx
     if (this.context.parent !== this) {
-      throw new Error("Invariant: Nested transaction should never be retried");
+      throw new Error("Invariant: Nested transaction should never be rebased");
     }
     this.context = new TransactionContext(this);
     this.isAborted = false;
     return this;
   }
-  commit(): TransactionReport {
+
+  commit(): ITransaction {
     if (this.isCommitted) {
       throw new Error(
         "Cannot commit transaction which has already been committed"
@@ -211,11 +216,8 @@ class Transaction implements ITransaction {
       );
     }
     // realize any left over thunks
-    for (let thunk of this) {
-      thunk();
-    }
+    this.flush();
 
-    let alteredRefs = new Map();
     try {
       for (let refEntry of this.context.getRefEntries()) {
         let [ref, current] = refEntry;
@@ -223,7 +225,6 @@ class Transaction implements ITransaction {
           // drift occurred, rebase
           throw rebaseSignal;
         }
-        alteredRefs.set(ref, current.value);
         if (this.isParentTransaction()) {
           ref.unsafeWrite(current.value);
         }
@@ -243,16 +244,18 @@ class Transaction implements ITransaction {
       }
     }
     this.isCommitted = true;
-    return { alteredRefs };
+    return this;
   }
 
-  onExecute(f: (e: ThunkReport) => void) {
+  onExecute(f: () => void) {
     return () => void 0;
   }
+
   onRebase(f: () => void) {
     return () => void 0;
   }
-  onCommit(f: (e: TransactionReport) => void) {
+
+  onCommit(f: () => void) {
     return () => void 0;
   }
 }
