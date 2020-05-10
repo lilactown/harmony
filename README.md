@@ -171,6 +171,23 @@ it in my ClojureScript projects, hence the use of [tsickle](https://github.com/a
 
 ???
 
+## Prior art
+
+The initial inspiration for the high level problem (scheduling work and
+committing it atomically) was based on the work that the
+[ReactJS](https://reactjs.org/) team is doing with React Fiber and Concurrent
+Mode. The eventual goal is to build on top of pine an abstraction that can
+participate in ReactJS' prioritizing scheduler.
+
+The inspiration for using software transactional memory as a base for
+conceptualizing this was very much thanks to my introduction to [Clojure's refs
+and transactions.](https://clojure.org/reference/refs)
+
+@roman01a's [implementation of STM](https://github.com/roman01la/node-stm)
+on top of Node.js and the [node-fibers](https://github.com/laverdet/node-fibers)
+library and the guide that it links to, [STM in Clojure](https://github.com/tvcutsem/stm-in-clojure), were also great references for initial versions of this library.
+Thank you both for providing a guiding light in something I knew little about
+before attempting to write this library!
 
 ## License
 
