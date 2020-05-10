@@ -134,3 +134,28 @@ deref(counter); // => -3
 /* our system has settled and all operations have been applied atomically!
    Hooray! */
 ```
+
+## Developing it
+
+The project is currently written using TypeScript. I am working on figuring out
+exactly how to package it for consumption; I would like to be able to easily use
+it in my ClojureScript projects, hence the use of [tsickle](https://github.com/angular/tsickle/) for compiler to Closure JS.
+
+### Building
+
+`make` or `make build`
+
+### Testing
+
+`make test`
+
+### Deploying
+
+???
+
+
+## License
+
+Copyright © 2020 Will Acton
+
+Distributed under the EPL 2.0
