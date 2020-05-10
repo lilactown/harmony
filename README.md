@@ -123,7 +123,7 @@ branchB.flush(); // => console.log: "-5"
 
 /* what we've done is introduce "contention" into our system. We now have two
    transactions that have started with the view that the value of counter is 0;
-   as soon as we commit one of them, that will be invalidate the other one, and
+   as soon as we commit one of them, that will invalidate the other one, and
    the transaction will rebase its operations. */
 
 // we could also use `.flush` here; we just want to finish what we're doing
