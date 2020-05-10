@@ -232,7 +232,7 @@ class Branch implements IBranch {
           if (this.autoRebase) {
             return this.commit();
           }
-          throw new Error("Transaction rebased");
+          throw new Error("Drift has occurred. Transaction rebased");
         } else {
           // bubble up rebase
           throw e;
