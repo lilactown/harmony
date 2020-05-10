@@ -9,9 +9,9 @@ The goal is to provide a way to build up a collection of operations (a
 operations in a single tick.
 
 By splitting up transactions into multiple "thunks" of operations, it allows us
-to do CPU intensive in transactions while periodically yielding the main thread
-to allow other work to occur. The exact strategy of how to split up work and
-schedule it to be run is left as an exercise to the reader. 😁
+to do CPU intensive work in transactions while periodically yielding the main
+thread to allow other work to occur. The exact strategy of how to split up work
+and schedule it to be run is left as an exercise to the reader. 😁
 
 In order to this, we borrow the idea of keeping track of the "in-transaction"
 value of a "ref" that we want to change separate from the shared, global value.
@@ -36,6 +36,16 @@ rebased and then committed again to retry.
 - Transactions should not do any I/O. Transactions are lazy and might fail,
 retry, or abort. Reading or changing anything other than refs is highly
 discouraged.
+
+There are downsides to this approach. If your system is highly contentious
+(i.e. many transactions operating on the same refs concurrently) then you
+will end up needing to rebase and re-do often, which will increase the overall
+work that your application does. The worst-case performance of this is far
+greater then executing everything serially.
+
+This worst-case has be weighed against the ability to pause and resume that
+work later while maintaining coherence. If your system doesn't need those
+properties, then pine is not what you're looking for.
 
 ## Should I use this for my app?
 
