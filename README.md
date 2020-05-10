@@ -13,7 +13,7 @@ to do CPU intensive work in transactions while periodically yielding the main
 thread to allow other work to occur. The exact strategy of how to split up work
 and schedule it to be run is left as an exercise to the reader. 😁
 
-In order to this, we borrow the idea of keeping track of the "in-transaction"
+In order to do this, we borrow the idea of keeping track of the "in-transaction"
 value of a "ref" that we want to change separate from the shared, global value.
 This way, a transaction can build up its result over time, and then when it has
 run to completion, commit the final result as the new global value of a ref.
