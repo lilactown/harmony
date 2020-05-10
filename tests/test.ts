@@ -65,7 +65,7 @@ describe("abort and rebase", () => {
       error = e;
     }
     expect(error && error.message).toBe(
-      "Cannot commit branch which has been aborted. Rebase it first"
+      "Cannot commit transaction which has been aborted. Rebase it first"
     );
   });
 

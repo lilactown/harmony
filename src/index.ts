@@ -117,11 +117,11 @@ class Branch implements IBranch {
 
   add(thunk: () => any) {
     if (this.isCommitted) {
-      throw new Error("Cannot add to branch which has been committed");
+      throw new Error("Cannot add to transaction which has been committed");
     }
     if (this.isAborted) {
       throw new Error(
-        "Cannot add to branch which has been aborted. Rebase it first"
+        "Cannot add to transaction which has been aborted. Rebase it first"
       );
     }
 
@@ -166,7 +166,7 @@ class Branch implements IBranch {
         this.rebase();
       }
       // not sure if we should throw or just continue...
-      throw new Error("Branch was restarted; rebasing");
+      throw new Error("Tranasction was restarted; rebasing");
     } else if (error) {
       this.isAborted = true;
       throw error;
@@ -185,7 +185,7 @@ class Branch implements IBranch {
 
   rebase() {
     if (this.isCommitted) {
-      throw new Error("Cannot rebase branch which has been committed");
+      throw new Error("Cannot rebase transaction which has been committed");
     }
     // general strategy atm is to move all thunks into unrealized state
     // reset context and then exec them at a later time
@@ -193,7 +193,7 @@ class Branch implements IBranch {
 
     // this should never be reached by a nested tx
     if (this.context.parent !== this) {
-      throw new Error("Invariant: Nested branch should never be rebased");
+      throw new Error("Invariant: Nested transaction should never be rebased");
     }
     this.context = new BranchContext(this);
     this.isAborted = false;
@@ -202,11 +202,13 @@ class Branch implements IBranch {
 
   commit(): IBranch {
     if (this.isCommitted) {
-      throw new Error("Cannot commit branch which has already been committed");
+      throw new Error(
+        "Cannot commit transaction which has already been committed"
+      );
     }
     if (this.isAborted) {
       throw new Error(
-        "Cannot commit branch which has been aborted. Rebase it first"
+        "Cannot commit transaction which has been aborted. Rebase it first"
       );
     }
     // realize any left over thunks
@@ -230,7 +232,7 @@ class Branch implements IBranch {
           if (this.autoRebase) {
             return this.commit();
           }
-          throw new Error("Branch rebased");
+          throw new Error("Transaction rebased");
         } else {
           // bubble up rebase
           throw e;
@@ -261,7 +263,7 @@ export function set<T>(ref: IRef<T>, v: T): T {
   if (ctx.current) {
     return ctx.current.write(ref, v);
   }
-  throw new Error("Cannot set ref outside of branch");
+  throw new Error("Cannot set ref outside of transaction");
 }
 
 export function alter<T>(
