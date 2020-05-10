@@ -83,7 +83,7 @@ branchA.add(() => {
   // set the value locally
   set(counter, 1);
   // apply a function to its value locally
-  alter(counter, count => count + 1)
+  alter(counter, count => count + 1);
 }).add(() => {
   /* there's no real reason to split this into another thunk, other than
      to demonstrate that we can run more operations inside of another thunk
@@ -114,14 +114,17 @@ branchA.doIn(() => deref(counter)) ;; => 2
 deref(counter); // => 0
 
 // let's execute all of `branchB` now
-branchB.flush(); // => console.log: "2"
+branchB.flush(); // => console.log: "-5"
 
 /* what we've done is introduce "contention" into our system. We now have two
    transactions that have started with the view that the value of counter is 0;
    as soon as we commit one of them, that will be invalidated, and the
    transaction will rebase its operations. */
 
-// commit one of the transactions
+// we could also use `.flush` here; we just want to finish what we're doing
+branchA.flushNext(); // => console.log: "2"
+
+// commit the transaction
 branchA.commit();
 
 // global value has been updated
