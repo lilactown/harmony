@@ -54,7 +54,7 @@ experiment using these concepts and a base to build higher level abstractions.
 In order to be useful, it probably needs two other tools to work with it:
 
 - A strategy for splitting up work into discrete thunks that should be
-atomically applied.
+all together atomic.
 - A scheduler that can prioritize, run transactions and rebase/retry.
 
 You could do this by hand, but it's liable to be quite tedious!
