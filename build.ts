@@ -42,8 +42,13 @@ function toClosureJS(
     },
     // hardcode ignore warnings to false for now
     shouldIgnoreWarningsForPath: (fileName: string) => false,
-    pathToModuleName: (context, fileName) =>
-      tsickle.pathToModuleName(rootModulePath, context, fileName),
+    pathToModuleName: (context, fileName) => {
+      // hacky way of renaming stuff in our project to pretty namespaces
+      if (fileName.endsWith("src/index.ts")) {
+        return "lilactown.stm-js";
+      }
+      return tsickle.pathToModuleName(rootModulePath, context, fileName);
+    },
     fileNameToModuleId: (fileName) => path.relative(rootModulePath, fileName),
     es5Mode: true,
     googmodule: true,
