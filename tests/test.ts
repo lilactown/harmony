@@ -46,34 +46,36 @@ describe("abort and rebase", () => {
   });
 
   test("throwing inside commit doesn't mutate ref", () => {
-    let error;
+    let error: Error | undefined;
     try {
       tx.commit();
     } catch (e) {
       error = e;
     }
-    expect(error.message).toBe("Invalid foo!");
+    expect(error && error.message).toBe("Invalid foo!");
 
     expect(deref(foo)).toBe(0);
   });
 
   test("can't commit an aborted branch", () => {
-    let error;
+    let error: Error | undefined;
     try {
       tx.commit();
     } catch (e) {
       error = e;
     }
-    expect(error.message).toBe(
+    expect(error && error.message).toBe(
       "Cannot commit branch which has been aborted. Rebase it first"
     );
   });
 
-  test("rebaseing", () => {
+  test("rebasing", () => {
     branch()
       .add(() => set(foo, 1))
       .commit();
     expect(deref(foo)).toBe(1);
+
+    expect(tx.commit).toThrow;
 
     tx.rebase().commit();
 
