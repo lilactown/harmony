@@ -1,4 +1,4 @@
-# pine: A library for handling atomic operations in JS
+# pine: multiversion concurrency control for JS
 
 pine is an experiment. It is my attempt at taking the idea of [Software
 Transactional Memory](https://en.wikipedia.org/wiki/Software_transactional_memory)
@@ -112,6 +112,11 @@ branchA.doIn(() => deref(counter)) ;; => 2
 
 // nothing has changed globally, though
 deref(counter); // => 0
+
+/* at this point we could pause here and yield the main thread to some other
+   work, or we could execute an async operation like I/O. As long as we keep
+   the reference to the branches we've created, we can always resume them later
+   and pick up where we left off. Neat! */
 
 // let's execute all of `branchB` now
 branchB.flush(); // => console.log: "-5"
