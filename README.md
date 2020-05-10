@@ -2,7 +2,7 @@
 
 pine is an experiment. It is my attempt at taking the idea of [Software
 Transactional Memory](https://en.wikipedia.org/wiki/Software_transactional_memory)
-and porting similar concepts to a single threaded context like JavaScript.
+and porting it to a single threaded context like JavaScript.
 
 The goal is to provide a way to build up a collection of operations (a
 "transaction"), schedule each of them to be run, and then atomically commit all
