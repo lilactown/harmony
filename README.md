@@ -1,6 +1,6 @@
-# pine: multiversion concurrency control for JS
+# harmony: multiversion concurrency control for JS
 
-pine is an experiment. It is my attempt at taking the idea of [Software
+harmony is an experiment. It is my attempt at taking the idea of [Software
 Transactional Memory](https://en.wikipedia.org/wiki/Software_transactional_memory)
 and porting it to a single threaded context like JavaScript.
 
@@ -45,11 +45,11 @@ greater then executing everything serially.
 
 This worst-case has be weighed against the ability to pause and resume that
 work later while maintaining coherence. If your system doesn't need those
-properties, then pine is not what you're looking for.
+properties, then harmony is not what you're looking for.
 
 ## Should I use this for my app?
 
-Probably not! pine is very low level and full of foot-guns. It is meant as an
+Probably not! harmony is very low level and full of foot-guns. It is meant as an
 experiment using these concepts and a base to build higher level abstractions.
 In order to be useful, it probably needs two other tools to work with it:
 
@@ -176,7 +176,7 @@ it in my ClojureScript projects, hence the use of [tsickle](https://github.com/a
 The initial inspiration for the high level problem (scheduling work and
 committing it atomically) was based on the work that the
 [ReactJS](https://reactjs.org/) team is doing with React Fiber and Concurrent
-Mode. The eventual goal is to build on top of pine an abstraction that can
+Mode. The eventual goal is to build on top of harmony an abstraction that can
 participate in ReactJS' prioritizing scheduler.
 
 The inspiration for using software transactional memory as a base for
