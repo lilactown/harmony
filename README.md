@@ -22,6 +22,7 @@ Transactions and refs have the following properties:
 
 - Anything can "read" a ref value at any time.
 - Refs can only be changed (or "written") in a transaction.
+- The values inside a ref should never but mutated; immutable data should be preferred
 - Transactions and operations can read and write to multiple refs
 - Many transactions can be started concurrently. Each transaction tracks the
 current value of each ref used inside the transaction.
