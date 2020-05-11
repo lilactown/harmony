@@ -109,7 +109,7 @@ branchB.add(() => {
 branchA.flushNext();
 
 // look at the current state of counter inside the transaction w/o effecting it
-branchA.doIn(() => deref(counter)) ;; => 2
+branchA.doIn(() => deref(counter)); // => 2
 
 // nothing has changed globally, though
 deref(counter); // => 0
