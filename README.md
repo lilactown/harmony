@@ -5,8 +5,8 @@ Transactional Memory](https://en.wikipedia.org/wiki/Software_transactional_memor
 and porting it to a single threaded context like JavaScript.
 
 The goal is to provide a way to build up a collection of operations (a
-"transaction"), schedule each of them to be run, and then atomically commit all
-operations in a single tick.
+"transaction") on mutable values called "refs", schedule each of them to be run,
+and then atomically commit all mutations in a single tick.
 
 By splitting up transactions into multiple "thunks" of operations, it allows us
 to do CPU intensive work in transactions while periodically yielding the main
