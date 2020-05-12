@@ -45,7 +45,7 @@ function toClosureJS(
     pathToModuleName: (context, fileName) => {
       // hacky way of renaming stuff in our project to pretty namespaces
       if (fileName.endsWith("src/index.ts")) {
-        return "lilactown.pine";
+        return "lilactown.harmony";
       }
       return tsickle.pathToModuleName(rootModulePath, context, fileName);
     },
