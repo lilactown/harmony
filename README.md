@@ -1,7 +1,6 @@
 # harmony: multiversion concurrency control for JS
 
-harmony is an experiment. It is my attempt at taking the idea of [Software
-Transactional Memory](https://en.wikipedia.org/wiki/Software_transactional_memory)
+harmony is an attempt at taking the idea of [Software Transactional Memory](https://en.wikipedia.org/wiki/Software_transactional_memory)
 and porting it to a single threaded context like JavaScript.
 
 The goal is to provide a way to build up a collection of operations (a
